@@ -1,0 +1,11 @@
+# AtomDisc Data Sources
+
+All datasets are external resources gathered for training and evaluating AtomDisc. Users must download them separately and follow the original terms of use.
+
+- **CID2SMILES** (PubChem): the full set of SMILES strings used for **Stage 1** VQ codebook training (`scripts/train_codebook.py`). Download the CID–SMILES mapping (`CID-SMILES.gz`) from the [PubChem Compound FTP](https://ftp.ncbi.nlm.nih.gov/pubchem/Compound/Extras/). Maintained by NCBI and dedicated to the public domain under [CC0](https://creativecommons.org/publicdomain/mark/1.0/).
+- **Mol-Instructions**: multimodal molecular instruction dataset leveraged during **Stage 3** LoRA multi-task pre-training (`scripts/pretrain_lora.py`) and optional Stage 4 instruction-tuning runs. Available on Hugging Face at [zjunlp/Mol-Instructions](https://huggingface.co/datasets/zjunlp/Mol-Instructions) (CC BY 4.0 license).
+- **MoleculeNet Benchmarks**: classic molecular property benchmarks for classification and regression, used in **Stage 4** fine-tuning scripts (`sft_property_classification.py`, `sft_property_regression.py`). Refer to [moleculenet.org](https://moleculenet.org) and [DeepChem’s MoleculeNet documentation](https://deepchem.readthedocs.io/en/latest/moleculenet.html). The curated DeepChem distribution is released under the MIT License; individual datasets retain their original licenses.
+- **ChEBI-20-MM**: chemical entity recognition and molecular caption data; used to augment instruction-style supervision in **Stage 3** LoRA pre-training and corresponding **Stage 4** caption-guided SFT experiments. Hosted on Hugging Face at [liupf/ChEBI-20-MM](https://huggingface.co/datasets/liupf/ChEBI-20-MM) (MIT License).
+- **ChEBI-Augmented (this work)**: extended ChEBI dataset with additional annotations for instruction-style tasks; plugged into **Stage 3** pre-training and downstream **Stage 4** caption/multi-task runs. Available via [mingxuzhang/ChEBI-Augmented](https://huggingface.co/datasets/mingxuzhang/ChEBI-Augmented) on Hugging Face (Apache-2.0 License).
+
+When using these datasets, please cite the original authors and respect their licenses. Store downloaded files under `atomdisc/data/` (or a path of your choice) and point training scripts to the appropriate locations via command-line arguments.
