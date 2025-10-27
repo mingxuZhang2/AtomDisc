@@ -1,5 +1,9 @@
 # AtomDisc
 
+Advances in large language models (LLMs) are accelerating discovery in molecular science. However, adapting molecular information to the serialized, token-based processing of LLMs remains a key challenge. Compared to other representations, molecular graphs explicitly encode atomic connectivity and local topological environments, which are key determinants of atomic behavior and molecular properties. Despite recent efforts to tokenize overall molecular topology, there still lacks effective fine-grained tokenization of local atomic environments, which are critical for determining sophisticated chemical properties and reactivity. 
+To address these issues, we introduce AtomDisc, a novel framework that quantizes atom-level local environments into structure-aware tokens embedded directly in LLM’s token space. 
+Our experiments show that AtomDisc, in a data-driven way, can distinguish chemically meaningful structural features that reveal structure–property associations. Equipping LLMs with AtomDisc tokens injects an interpretable inductive bias that delivers state-of-the-art performance on property prediction and molecular generation. Our methodology and findings can pave the way for constructing more powerful molecular LLMs aimed at mechanistic insight and complex chemical reasoning.
+
 AtomDisc is a four-stage training framework that fuses graph-based molecular representations with large language models (LLMs). Stage 1 trains a GNN+VQ codebook, Stage 2 aligns codebook embeddings with the LLM, Stage 3 performs multi-task LoRA pre-training, and Stage 4 applies supervised fine-tuning to downstream property and reaction tasks. All scripts now rely on relative or empty paths so that experiment-specific locations can be supplied at runtime.
 
 ## Figure 1 Overview
