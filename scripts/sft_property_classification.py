@@ -124,73 +124,72 @@ def get_scaffold(smiles: str) -> str:
         # 如果出现任何异常，返回原SMILES
         return smiles
 
-def scaffold_split(recs: List[Dict[str, Any]], val_ratio: float = 0.1, seed: int = 42, 
-                  balanced: bool = True) -> tuple:
+def scaffold_split(recs: List[Dict[str, Any]], val_ratio: float = 0.1, test_ratio: float = 0.1,
+                  seed: int = 42, balanced: bool = True) -> tuple:
     """
     基于scaffold进行数据分割
     Args:
         recs: 数据记录列表，每个记录包含 'input' (SMILES) 字段
         val_ratio: 验证集比例
+        test_ratio: 测试集比例
         seed: 随机种子
         balanced: True=随机scaffold split（更平衡）; False=确定性split（可能不平衡）
     Returns:
-        (train_recs, val_recs)
+        (train_recs, val_recs, test_recs)
     """
+    total = len(recs)
+    if total == 0:
+        return [], [], []
+
     if not RDKIT_AVAILABLE:
         # 降级到随机分割
         random.seed(seed)
         random.shuffle(recs)
-        n_val = max(1, int(len(recs) * val_ratio))
-        return recs[n_val:], recs[:n_val]
-    
+        n_val = max(1, int(total * val_ratio))
+        n_test = max(1, int(total * test_ratio))
+        n_val = min(n_val, total - 2) if total >= 3 else n_val
+        n_test = min(n_test, total - n_val - 1) if total - n_val >= 2 else n_test
+        val_recs = recs[:n_val]
+        test_recs = recs[n_val:n_val + n_test]
+        train_recs = recs[n_val + n_test:]
+        return train_recs, val_recs, test_recs
+
     # 按scaffold分组
     scaffold_to_indices = defaultdict(list)
     for i, rec in enumerate(recs):
         smiles = rec["input"]
         scaffold = get_scaffold(smiles)
         scaffold_to_indices[scaffold].append(i)
-    
+
+    scaffold_groups = list(scaffold_to_indices.values())
+
     if balanced:
-        # Random Scaffold Split - 更平衡的分布
         random.seed(seed)
-        scaffold_groups = list(scaffold_to_indices.values())
-        random.shuffle(scaffold_groups)  # 随机打乱scaffold顺序
-        
-        # 贪心分配到验证集，直到接近目标比例
-        val_indices = []
-        train_indices = []
-        target_val_size = len(recs) * val_ratio
-        
-        for scaffold_indices in scaffold_groups:
-            if len(val_indices) + len(scaffold_indices) <= target_val_size:
-                val_indices.extend(scaffold_indices)
-            else:
-                train_indices.extend(scaffold_indices)
-                
+        random.shuffle(scaffold_groups)
     else:
-        # 确定性 Scaffold Split - 可能不平衡，但可重现
-        # 按scaffold大小排序（大scaffold优先）
-        scaffold_groups = sorted(scaffold_to_indices.items(), 
-                               key=lambda x: len(x[1]), reverse=True)
-        
-        # 贪心分配：尽量让验证集接近目标比例
-        val_indices = []
-        train_indices = []
-        val_size = 0
-        target_val_size = len(recs) * val_ratio
-        
-        for scaffold, indices in scaffold_groups:
-            if val_size < target_val_size:
-                val_indices.extend(indices)
-                val_size += len(indices)
-            else:
-                train_indices.extend(indices)
-    
-    # 构建分割后的数据
+        scaffold_groups = sorted(scaffold_groups, key=len, reverse=True)
+
+    target_val = total * val_ratio
+    target_test = total * test_ratio
+    val_indices, test_indices, train_indices = [], [], []
+
+    for group in scaffold_groups:
+        if len(val_indices) + len(group) <= target_val:
+            val_indices.extend(group)
+        elif len(test_indices) + len(group) <= target_test:
+            test_indices.extend(group)
+        else:
+            train_indices.extend(group)
+
+    # 若训练集为空或比例不足，补回剩余数据
+    remaining = set(range(total)) - set(val_indices) - set(test_indices) - set(train_indices)
+    train_indices.extend(list(remaining))
+
     train_recs = [recs[i] for i in train_indices]
     val_recs = [recs[i] for i in val_indices]
-    
-    return train_recs, val_recs
+    test_recs = [recs[i] for i in test_indices]
+
+    return train_recs, val_recs, test_recs
 
 # ═══════════════════════════════════════════════
 # Metrics & evaluation
@@ -556,14 +555,17 @@ def sft_lora_all_tasks(args):
     # Scaffold分割
     if RDKIT_AVAILABLE and args.use_scaffold_split == 1:
         main_logger.info("🧬 使用 Scaffold Split 进行数据分割...")
-        pool_recs, val_recs = scaffold_split(all_recs, val_ratio=0.1, seed=args.seed, balanced=args.balanced_scaffold)
+        train_recs, val_recs, test_recs = scaffold_split(all_recs, val_ratio=0.1, test_ratio=0.1, seed=args.seed, balanced=args.balanced_scaffold)
         main_logger.info("✅ Scaffold Split 完成")
     else:
         main_logger.info("📝 使用随机分割...")
         n_val = max(1, int(0.1 * len(all_recs)))
-        random.shuffle(all_recs)
-        pool_recs = all_recs[n_val:]
+        n_test = max(1, int(0.1 * len(all_recs)))
+        n_val = min(n_val, len(all_recs) - 2) if len(all_recs) >= 3 else n_val
+        n_test = min(n_test, len(all_recs) - n_val - 1) if len(all_recs) - n_val >= 2 else n_test
         val_recs = all_recs[:n_val]
+        test_recs = all_recs[n_val:n_val + n_test]
+        train_recs = all_recs[n_val + n_test:]
 
     # --- 按子任务分组 ---
     main_logger.info("🎯 按子任务分组数据...")
@@ -575,15 +577,16 @@ def sft_lora_all_tasks(args):
             task_groups[subtask].append(r)
         return task_groups
     
-    train_task_groups = group_by_subtask(pool_recs)
+    train_task_groups = group_by_subtask(train_recs)
     val_task_groups = group_by_subtask(val_recs)
+    test_task_groups = group_by_subtask(test_recs)
     
     # 确保训练集和验证集有相同的任务
-    common_tasks = set(train_task_groups.keys()) & set(val_task_groups.keys())
+    common_tasks = set(train_task_groups.keys()) & set(val_task_groups.keys()) & set(test_task_groups.keys())
     main_logger.info(f"发现 {len(common_tasks)} 个共同子任务")
     
-    if len(common_tasks) != len(train_task_groups) or len(common_tasks) != len(val_task_groups):
-        main_logger.warning("⚠️ 训练集和验证集的任务不完全一致！")
+    if len(common_tasks) != len(train_task_groups) or len(common_tasks) != len(val_task_groups) or len(common_tasks) != len(test_task_groups):
+        main_logger.warning("⚠️ 训练集、验证集或测试集的任务不完全一致！")
     
     # --- 逐个训练子任务 ---
     task_results = {}
@@ -600,22 +603,25 @@ def sft_lora_all_tasks(args):
         
         task_train_recs = train_task_groups[task_name]
         task_val_recs = val_task_groups[task_name]
+        task_test_recs = test_task_groups[task_name]
         
         # 检查数据量
         train_yes = sum(1 for r in task_train_recs if str(r["output"]).strip().lower() == "yes")
         train_no = len(task_train_recs) - train_yes
         val_yes = sum(1 for r in task_val_recs if str(r["output"]).strip().lower() == "yes")
         val_no = len(task_val_recs) - val_yes
+        test_yes = sum(1 for r in task_test_recs if str(r["output"]).strip().lower() == "yes")
+        test_no = len(task_test_recs) - test_yes
         
-        main_logger.info(f"训练: {train_yes}+{train_no}={len(task_train_recs)}, 验证: {val_yes}+{val_no}={len(task_val_recs)}")
+        main_logger.info(f"训练: {train_yes}+{train_no}={len(task_train_recs)}, 验证: {val_yes}+{val_no}={len(task_val_recs)}, 测试: {test_yes}+{test_no}={len(task_test_recs)}")
         
         # 跳过数据太少或单一类别的任务
-        if len(task_train_recs) < 10 or len(task_val_recs) < 3:
+        if len(task_train_recs) < 10 or len(task_val_recs) < 3 or len(task_test_recs) < 3:
             main_logger.warning(f"⚠️ 跳过任务 {task_name[:30]}... (数据太少)")
             failed_tasks.append(task_name)
             continue
             
-        if min(train_yes, train_no) == 0 or min(val_yes, val_no) == 0:
+        if min(train_yes, train_no) == 0 or min(val_yes, val_no) == 0 or min(test_yes, test_no) == 0:
             main_logger.warning(f"⚠️ 跳过任务 {task_name[:30]}... (单一类别)")
             failed_tasks.append(task_name)
             continue
