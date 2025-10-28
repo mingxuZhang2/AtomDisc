@@ -136,3 +136,5 @@ The remaining scripts (`sft_retrosynthesis.py`, `sft_reagent_prediction.py`, `sf
 
 AtomDisc is released under the MIT License (see `LICENSE`). The project builds upon open-source molecular modeling and LLM fine-tuning research; please open issues or pull requests for questions and improvements. 
 
+
+You can download the checkpoints from the repository: https://huggingface.co/anonymous041/atomdisc

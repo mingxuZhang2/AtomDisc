@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# ----------------------参数区----------------------
+# ---------------------- Parameter Section ----------------------
 FUNC_SMARTS_LIST = [
     ("carboxy_C=O", "[CX3](=O)[OX1H0-,OX2H1]", 1),
     ("carboxy_OH",  "[CX3](=O)[OX1H0-,OX2H1]", 2),
@@ -28,7 +28,7 @@ NUM_WORKERS = 10
 BASIS, XC = "sto-3g", "hf"
 
 TARGET_GROUPS = ["aromatic_C", "alcohol_OH"]
-# ----------------------参数区----------------------
+# ---------------------- Parameter Section ----------------------
 
 def sample_df(df, group, token=None, n=SAMPLES_PER_GROUP):
     sub = df[df["FUNC_GROUP"] == group]
@@ -55,8 +55,8 @@ def get_pz_ao_indices(mol_pyscf, atom_idx_rdkit):
     indices = []
     for i, ao in enumerate(ao_labels):
         print("AO:", ao)
-        # 检查ao结构
-        # 有可能ao[0]是字符串，比如"0"，你得 int(ao[0]) == atom_idx_rdkit
+        # Check ao structure
+        # It might be that ao[0] is a string, like "0", you need int(ao[0]) == atom_idx_rdkit
         try:
             at_idx = int(ao[0]) if isinstance(ao[0], str) and ao[0].isdigit() else ao[0]
             sym = ao[1]
@@ -64,15 +64,15 @@ def get_pz_ao_indices(mol_pyscf, atom_idx_rdkit):
             m = ao[3]
             print(f"at_idx={at_idx}, sym={sym}, l={l}, m={m}")
             if at_idx == atom_idx_rdkit and l == '2p' and m == 'z':
-                if sym in ['C', 'O']:  # 如果你只想关注常见主族元素
+                if sym in ['C', 'O']:  # Focus on common main-group elements
                     indices.append(i)
         except Exception as e:
-            print("解析AO label失败:", ao, e)
+            print("Failed to parse AO label:", ao, e)
     #print("pz AO indices for atom", atom_idx_rdkit, indices)
     return indices
 
 def calc_pi_electron_on_atom(mol, atom_idx, basis=BASIS, xc=XC):
-    # 返回该原子上pz AO的总电子数
+    # Return the total electron occupancy on pz atomic orbitals of the target atom
     try:
         atom_list = []
         for atom in mol.GetAtoms():
@@ -84,10 +84,10 @@ def calc_pi_electron_on_atom(mol, atom_idx, basis=BASIS, xc=XC):
         dm = mf.make_rdm1()
         ao_idx = get_pz_ao_indices(mol_pyscf, atom_idx)
         if not ao_idx: return None
-        # 计算这些pz AO上的总电子占据
+        # Compute the total occupancy across these pz orbitals
         occ = 0
         for idx in ao_idx:
-            occ += dm[idx, idx] * 2   # 双占据
+            occ += dm[idx, idx] * 2   # Double occupancy
         return occ
     except Exception as e:
         # print("pi electron error", e)
@@ -119,11 +119,11 @@ def process_batch(df, typ, fg, token_id):
             if res: records.extend(res)
     return records
 
-# 1. 数据集打标签
+# 1. Label the dataset
 df = pd.read_csv("/home-ssd/Users/nsgm_zmx/Molecule/src_classification/Llama/visualize/codeward/CID2SMILES_special_tokens.csv")
 compiled = [(lab, Chem.MolFromSmarts(sma), idx) for lab, sma, idx in FUNC_SMARTS_LIST]
 records = []
-print("正在打标签（所有原子），请稍候...")
+print("Labeling all atoms. This may take a while...")
 for _, row in tqdm(df.iterrows(), total=len(df)):
     smiles = row["SMILES"]
     tokens = list(map(int, str(row["TOKENS"]).split(',')))
@@ -151,20 +151,20 @@ for _, row in tqdm(df.iterrows(), total=len(df)):
         })
 allatom_df = pd.DataFrame(records)
 allatom_df = allatom_df[allatom_df["N_ATOMS"] <= MAX_ATOMS]
-print(f"已收集原子标签总数：{len(allatom_df)}")
+print(f"Total labeled atoms collected: {len(allatom_df)}")
 
 mix_df = allatom_df[allatom_df["TOKEN_ID"] == MIX_TOKEN]
 groups = mix_df["FUNC_GROUP"].value_counts().index.tolist()
 if len(groups) < 2:
-    raise ValueError("混合token需至少包含两个官能团。")
-print(f"\n混合token {MIX_TOKEN} 内部官能团及数量：")
+    raise ValueError("Mixed token must contain at least two functional groups.")
+print(f"\nFunctional groups and counts within mixed token {MIX_TOKEN}:")
 print(mix_df["FUNC_GROUP"].value_counts())
 
 all_pi_records = []
 for fg in TARGET_GROUPS:
     # MIXED
     mix_atoms = sample_df(mix_df, fg, MIX_TOKEN)
-    print(f"正在分析MIXED组 {fg}, 样本量{len(mix_atoms)}")
+    print(f"Analyzing MIXED group {fg}, sample size {len(mix_atoms)}")
     all_pi_records += process_batch(mix_atoms, "MIXED", fg, MIX_TOKEN)
     # PURE
     freq = allatom_df[allatom_df["FUNC_GROUP"] == fg]["TOKEN_ID"].value_counts()
@@ -172,11 +172,11 @@ for fg in TARGET_GROUPS:
     if pure_tok == MIX_TOKEN and len(freq) > 1:
         pure_tok = freq.index[1]
     pure_atoms = sample_df(allatom_df, fg, pure_tok)
-    print(f"正在分析PURE组 {fg}, 样本量{len(pure_atoms)}")
+    print(f"Analyzing PURE group {fg}, sample size {len(pure_atoms)}")
     all_pi_records += process_batch(pure_atoms, "PURE", fg, pure_tok)
 
 out_df = pd.DataFrame(all_pi_records)
 save_path = f"mix_token{MIX_TOKEN}_aromatic_C_hydroxy_O_pielectron_compare_{SAMPLES_PER_GROUP}.csv"
 out_df.to_csv(save_path, index=False)
-print(f"\nπ电子占据结果已保存: {save_path}")
-print("全部完成！") 
+print(f"\nSaved π-electron occupancy results to: {save_path}")
+print("All done!") 

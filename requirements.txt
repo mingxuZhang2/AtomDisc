@@ -1,4 +1,4 @@
-# pip 安装核心依赖（来自 cs224n 环境）
+# Core dependencies to install via pip 
 torch==2.3.1
 torchvision==0.18.1
 torchaudio==2.3.1

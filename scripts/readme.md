@@ -11,7 +11,7 @@ Pre-trained artifacts for all stages are hosted at the AtomDisc Hugging Face rep
 - Stage 3 multi-task LoRA adapters (`--stage3_lora_adapter_path`)
 - Example tokenizer/LLM weights prepared for AtomDisc experiments
 
-Repository URL: https://huggingface.co/mingxuzhang/AtomDisc
+You can download the checkpoints from the repository: https://huggingface.co/anonymous041/atomdisc
 
 ## Scripts Overview
 

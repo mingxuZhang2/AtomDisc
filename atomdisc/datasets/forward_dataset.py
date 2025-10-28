@@ -1,5 +1,5 @@
-# 文件名: MolVQDataset_bonds_both.py
-# 描述: 为正向反应预测任务定制的Dataset类 (更新了prompt格式)
+# Filename: MolVQDataset_bonds_both.py
+# Description: Dataset class tailored for forward reaction prediction (updated prompt format)
 
 import torch
 from torch.utils.data import Dataset
@@ -12,21 +12,21 @@ from atomdisc.tokenization.mol_tokenizer import convert_text_smiles_to_mol_token
 
 class MolVQDataset(Dataset):
     """
-    为正向反应预测任务定制的Dataset。
-    Prompt 现在采用统一的 SFT 格式：
+    Dataset tailored for forward reaction prediction.
+    Prompt now follows the unified SFT format:
 
     ### Instruction:
     <instruction>
 
     ### Input:
     Molecules (SMILES):
-    <reactant‑1>\n<reactant‑2>...
+    <reactant-1>\n<reactant-2>...
 
     Structural representations:
-    <mol>...</mol>  (逐行, 与 SMILES 一一对应)
+    <mol>...</mol>  (line-by-line, aligned with the SMILES)
 
     ### Response:
-    <model 需预测的产物 SMILES>
+    <product SMILES to be predicted by the model>
     """
 
     def __init__(self, records, tokenizer, gnn, vq, device, max_length_prompt=1024, max_length_response=512, use_structure_token=1):
@@ -67,14 +67,14 @@ class MolVQDataset(Dataset):
                     return self._get_error_item("Missing required fields.")
                 continue
 
-            # --- 1. 分离所有输入的 SMILES ---
+            # --- 1. Split all input SMILES ---
             smi_list = [smi for smi in input_smiles_str.split('.') if smi]
             if not smi_list:
                 self.logger.warning(f"Input SMILES string is empty for record {current_idx}. Trying new sample.")
                 idx = random.randint(0, len(self.records) - 1)
                 continue
 
-            # --- 2. 将 SMILES 与 <mol> 序列分别收集 ---
+            # --- 2. Gather SMILES and <mol> sequences separately ---
             smiles_lines = []
             mol_token_lines = []
             conversion_success = True
@@ -100,7 +100,7 @@ class MolVQDataset(Dataset):
                     return self._get_error_item("SMILES conversion failed.")
                 continue
 
-            # --- 3. 构建符合统一范式的 Prompt ---
+            # --- 3. Build a uniform prompt ---
             smiles_section = "\n".join(smiles_lines)
             mol_tokens_section = "\n".join(mol_token_lines)
             if self.use_structure_token:
@@ -117,10 +117,10 @@ class MolVQDataset(Dataset):
                     f"### Response:"
                 )
 
-            # --- 4. 产物 (labels) 仍为原始 SMILES 字符串 ---
+            # --- 4. The product (labels) remains as the raw SMILES string ---
             target_text = product_smiles_str
 
-            # --- 5. Tokenize & 创建 Labels ---
+            # --- 5. Tokenize & create labels ---
             prompt_tokenized = self.tokenizer(
                 full_prompt, truncation=True, max_length=self.max_length_prompt, add_special_tokens=False
             )
@@ -133,13 +133,13 @@ class MolVQDataset(Dataset):
 
             bos_token_id, eos_token_id = self.tokenizer.bos_token_id, self.tokenizer.eos_token_id
             input_ids_list = [bos_token_id] + prompt_ids_list + response_ids_list + [eos_token_id]
-            prompt_len_for_labels = 1 + len(prompt_ids_list)  # +1 是 BOS
+            prompt_len_for_labels = 1 + len(prompt_ids_list)  # +1 for BOS
 
             input_ids = torch.tensor(input_ids_list, dtype=torch.long)
             labels = torch.full_like(input_ids, -100)
 
             start_of_response_for_labels = prompt_len_for_labels
-            end_of_response_for_labels = prompt_len_for_labels + len(response_ids_list) + 1  # +1 是 EOS
+            end_of_response_for_labels = prompt_len_for_labels + len(response_ids_list) + 1  # +1 for EOS
             labels[start_of_response_for_labels:end_of_response_for_labels] = input_ids[
                 start_of_response_for_labels:end_of_response_for_labels
             ].clone()
@@ -158,7 +158,7 @@ class MolVQDataset(Dataset):
         return self._get_error_item("Exceeded max retries in __getitem__.")
 
     def _get_error_item(self, message="Error"):
-        """返回一个表示错误的虚拟样本，以便 collate_fn 可以安全地过滤掉它。"""
+        """Return a placeholder sample so the collate_fn can safely filter it out."""
         return {
             "prompt": "ERROR_PROMPT",
             "input_ids": torch.tensor([self.tokenizer.pad_token_id]),

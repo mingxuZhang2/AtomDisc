@@ -1,6 +1,6 @@
-# 文件名: train_projector_on_sft.py
-# 描述: 使用SFT数据格式，专门训练一个Projector。
-#       训练结束后，将最终的投影结果“烘焙”进LLM的嵌入层，并保存整个LLM模型。
+# Filename: train_projector_on_sft.py
+# Description: Train a dedicated projector using the SFT data format.
+#               After training, bake the final projection into the LLM embedding layer and save the full model.
 
 import os
 import argparse
@@ -23,7 +23,7 @@ from atomdisc.utils.gnn_vq_utils import (
 from atomdisc.datasets.forward_dataset import MolVQDataset, collate_fn as user_collate_fn
 from transformers import AutoTokenizer, LlamaForCausalLM, get_linear_schedule_with_warmup
 
-# 定义Projector模型
+# Define the Projector model
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 from transformers import LlamaConfig
 from torch import nn
@@ -48,7 +48,7 @@ class Projector(nn.Module):
                     init.zeros_(layer.bias)
 
         self.norm = LlamaRMSNorm(output_dim, eps=llama_config.rms_norm_eps)
-        self.output_scale = 0.0168  # 也可用 llama_config.initializer_range
+        self.output_scale = 0.0168  # Alternatively use llama_config.initializer_range
         
     def forward(self, x):
         x = self.model(x)
@@ -102,7 +102,7 @@ def train_projector(args):
     logger.info(f"Number of trainable parameters in the projector: {trainable_params:,}")
 
 
-    # --- 保存逻辑的核心函数 ---
+    # --- Core save routine ---
     @torch.no_grad()
     def refresh_and_save_llm(output_path):
         logger.info(f"Refreshing LLM's embedding table for saving to {output_path}...")
@@ -133,7 +133,7 @@ def train_projector(args):
     total_steps = num_optimizer_steps_per_epoch * args.num_epochs
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=int(args.warmup_ratio * total_steps), num_training_steps=total_steps)
 
-    # -------------------- 断点恢复训练逻辑 --------------------
+    # -------------------- Checkpoint resume logic --------------------
     start_epoch = 0
     global_step = 0
     resume_flag = str(args.resume_from_checkpoint).lower() == "true"
@@ -195,7 +195,7 @@ def train_projector(args):
             )
             loss = outputs.loss
             
-            # 【修改】梯度累积
+            # [Update] Gradient accumulation
             loss = loss / args.gradient_accumulation_steps
             loss.backward()
             
@@ -211,7 +211,7 @@ def train_projector(args):
 
             train_iterator.set_postfix({"loss": f"{loss.item() * args.gradient_accumulation_steps:.4f}", "lr": f"{scheduler.get_last_lr()[0]:.2e}"})
         
-        # 处理epoch末尾不足一个累积步长的梯度
+        # Handle remaining batches that did not trigger a full accumulation step
         if (len(train_dataloader) % args.gradient_accumulation_steps != 0):
              if args.max_grad_norm > 0:
                  torch.nn.utils.clip_grad_norm_(projector.parameters(), args.max_grad_norm)
@@ -222,7 +222,7 @@ def train_projector(args):
         avg_loss = epoch_loss_sum / len(train_dataloader)
         logger.info(f"Epoch {epoch+1} finished. Average Loss: {avg_loss:.4f}")
 
-        # --- 保存逻辑 ---
+        # --- Save logic ---
         if (epoch + 1) % args.save_every_epochs == 0 or (epoch + 1) == args.num_epochs:
             if args.save_intermediate_checkpoints and (epoch + 1) != args.num_epochs:
                 output_path = os.path.join(args.output_dir, f"epoch_{epoch+1}")
@@ -231,7 +231,7 @@ def train_projector(args):
             
             os.makedirs(output_path, exist_ok=True)
             
-            # 保存训练状态
+            # Save training state
             torch.save(projector.state_dict(), os.path.join(output_path, "projector.pt"))
             torch.save({
                 'epoch': epoch,
@@ -241,7 +241,7 @@ def train_projector(args):
             }, os.path.join(output_path, "optimizer.pt"))
             logger.info(f"Saved training state (projector, optimizer) to {output_path}")
             
-            # 保存最终产物（带烘焙嵌入的LLM）
+            # Save the final artifact (LLM with baked-in embeddings)
             refresh_and_save_llm(output_path)
 
     logger.info("Projector training finished. Final model saved.")
@@ -257,7 +257,7 @@ if __name__ == "__main__":
     parser.add_argument("--base_llm_model_path", type=str, default="", help="Path to the base LLM model.")
     parser.add_argument("--output_dir", type=str, default="./stage2_embedding", help="Directory to save the final model and logs.")
     
-    # 【新功能】添加断点恢复参数
+    # [New] Add checkpoint resume parameters
     parser.add_argument("--resume_from_checkpoint", default="True", help="Set this flag to resume from a checkpoint.")
     parser.add_argument("--resume_ckpt_path", type=str, default="", help="Path to the checkpoint directory to resume from.")
 

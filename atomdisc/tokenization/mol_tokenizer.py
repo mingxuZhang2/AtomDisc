@@ -11,15 +11,15 @@ logger = logging.getLogger("convert_text_smiles_to_mol_tokens")
 
 __all__ = ["add_smiles_special_tokens"]
 
-# ---------- 生成 SMILES 结构符号正则 ---------- #
+# ---------- Build SMILES structural symbol regex ---------- #
 
-# 1. RDKit 所有元素符号
+# 1. All element symbols from RDKit
 _ELEMENT_SYMBOLS_CAPITALIZED = [
     Chem.GetPeriodicTable().GetElementSymbol(i) for i in range(1, 119)
 ]
-# 2. “芳香小写”元素
+# 2. Aromatic lowercase elements
 _AROMATIC_SYMBOLS_LOWERCASE = ['c', 'n', 'o', 's', 'p', 'se']
-# 3. 明确要优先匹配的多字符元素（不拆分）
+# 3. Multi-character elements to match first (do not split)
 _EXPLICIT_MULTI = ['Cl', 'Br']
 
 elements_for_regex: list[str] = _EXPLICIT_MULTI + [
@@ -31,24 +31,24 @@ SORTED_ELEMENT_SYMBOLS = sorted(
 )
 ELEMENT_PATTERN_PART = "|".join(map(re.escape, SORTED_ELEMENT_SYMBOLS))
 
-# 与 pre-training 相同的 tokenizer 正则
+# Use the same tokenizer regex as pre-training
 SMILES_TOKENIZER_REGEX_PATTERN = re.compile(
     r"("
-    r"\[[^\]]+\]|"              # bracket 原子
-    f"{ELEMENT_PATTERN_PART}|"   # 元素符号
-    r"@@|@|"                    # 手性符号
-    r"[=\#\(\)\.\[\]\+\-\:\/\\%]|[0-9]"  # 其它结构符号 + 数字
+    r"\[[^\]]+\]|"              # bracket atoms
+    f"{ELEMENT_PATTERN_PART}|"   # element symbols
+    r"@@|@|"                    # chirality symbols
+    r"[=\#\(\)\.\[\]\+\-\:\/\\%]|[0-9]"  # other structural symbols + digits
     r")"
 )
 STRUCT_SYMBOLS_TO_PRESERVE = {
     '=', '#', '(', ')', '.', '%', '+', '-', ':', '/', '\\',
     '[', ']', '@', '@@', *[str(i) for i in range(10)]
 }
-# ----------- 将 SMILES 字符串切分为 token 列表 ----------- #
+# ----------- Split a SMILES string into a token list ----------- #
 def _tokenize_smiles_string(smi: str) -> List[str]:
     tokens, cur = [], 0
     while cur < len(smi):
-        # 跳过空白
+        # Skip whitespace
         while cur < len(smi) and smi[cur].isspace():
             cur += 1
         if cur >= len(smi):
@@ -59,20 +59,19 @@ def _tokenize_smiles_string(smi: str) -> List[str]:
             tokens.append(m.group(1))
             cur = m.end()
         else:
-            # 理论上不会到这里；保险处理
+            # Should not happen; include the character as-is for robustness
             tokens.append(smi[cur])
             cur += 1
     return tokens
 
-# ----------- 主函数，名称/签名保持不变 ----------- #
+# ----------- Main function; keep the signature unchanged ----------- #
 def convert_text_smiles_to_mol_tokens(text: str, gnn, vq, device):
     """
-    将 text 中每段  <smiles>SMI</smiles>  替换成
-        <mol> token… </mol>  形式，
-    其中 token 同 pre-training 逻辑：
-       - 元素 / [bracket] 原子 → 对应 <atom_k>
-       - 结构符号 (= # ( ) … digits) 原样保留
-    函数仍然 **只保留 text 第一个空行前的部分**（\n\n 截断规则不变）。
+    Replace each <smiles>SMI</smiles> segment with
+        <mol> token… </mol>, using the pre-training logic:
+       - Elements / [bracket] atoms → corresponding <atom_k>
+       - Structural symbols (= # ( ) … digits) remain as their original characters
+    The function still truncates everything after the first blank line (\n\n).
     """
     smiles_re = re.compile(r'<smiles>(.*?)</smiles>', flags=re.DOTALL | re.IGNORECASE)
     out_text  = text
@@ -84,7 +83,7 @@ def convert_text_smiles_to_mol_tokens(text: str, gnn, vq, device):
             or (lambda fs=fix_smiles(raw_smi): safe_parse_mol(fs) if fs != raw_smi else None)()
         )
 
-        # ------ 默认失败回退为空串 ------
+        # ------ Fallback to empty string when conversion fails ------
         mol_token_seq = ""
 
         if mol:
@@ -95,11 +94,11 @@ def convert_text_smiles_to_mol_tokens(text: str, gnn, vq, device):
                     node_repr = gnn(x, ei, ea)
                     _, code_ids, _ = vq(node_repr)
 
-                # 1) 先用正则切 SMILES（用 canonical 形式，效果更稳定）
+                # 1) Tokenize SMILES using the canonical form for stability
                 try:
                     canon_smi = Chem.MolToSmiles(mol, isomericSmiles=True, kekuleSmiles=False)
                 except Exception:
-                    canon_smi = raw_smi  # canonical 失败就用原串
+                    canon_smi = raw_smi  # If canonicalization fails, use the original string
 
                 smi_tokens = _tokenize_smiles_string(canon_smi)
                 code_iter  = iter(code_ids.cpu().tolist())
@@ -113,7 +112,7 @@ def convert_text_smiles_to_mol_tokens(text: str, gnn, vq, device):
                             pieces.append(f"<atom_{next(code_iter)}>")
                         except StopIteration:
                             logger.error(
-                                f"SMILES '{raw_smi}' atom-VQ 数量不匹配；直接终止替换。"
+                                f"SMILES '{raw_smi}' atom-VQ count mismatch; abort replacement."
                             )
                             pieces = ["<mol>", "</mol>"]
                             break
@@ -122,9 +121,9 @@ def convert_text_smiles_to_mol_tokens(text: str, gnn, vq, device):
                     pieces.append("</mol>")
                 mol_token_seq = " ".join(pieces)
 
-        # ---- 把整个 <smiles>…</smiles> 块替换成生成的 token 序列 ----
+        # ---- Replace the entire <smiles>…</smiles> block ----
         out_text = out_text.replace(m.group(0), mol_token_seq)
 
-    # --------- \n\n 之前截断 ---------
+    # --------- Truncate before double newline ---------
     out_text = out_text.split("\n\n")[0].strip()
     return out_text

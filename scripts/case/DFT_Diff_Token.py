@@ -5,7 +5,7 @@ from pyscf import gto, dft
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# --- 你的官能团SMARTS定义 ---
+# --- Functional group SMARTS definitions ---
 FUNC_SMARTS_LIST = [
     ("carboxy_C=O", "[CX3](=O)[OX1H0-,OX2H1]", 1),
     ("carboxy_OH",  "[CX3](=O)[OX1H0-,OX2H1]", 2),
@@ -25,7 +25,7 @@ BASIS, XC = "sto-3g", "hf"
 MAX_ATOMS = 50
 NUM_WORKERS = 8
 
-# 你要分析的两个token编号
+# IDs of the two tokens you want to analyse
 tokA = 315
 tokB = 490
 tokens_of_interest = [tokA, tokB]
@@ -68,11 +68,11 @@ def get_mulliken_charge(args):
         return None
 
 def main():
-    df = pd.read_csv("/home-ssd/Users/nsgm_zmx/Molecule/src_classification/Llama/property_analyze/data/CID2SMILES_special_tokens.csv")  # 改为你的路径
+    df = pd.read_csv("/home-ssd/Users/nsgm_zmx/Molecule/src_classification/Llama/property_analyze/data/CID2SMILES_special_tokens.csv")  # Replace with your path
     compiled = [(lab, Chem.MolFromSmarts(sma), pick) for lab, sma, pick in FUNC_SMARTS_LIST]
     records = []
 
-    # 1. 官能团标签分配（每个原子），只保留目标token
+    # 1. Assign functional group labels per atom and keep only the target tokens
     for _, row in tqdm(df.iterrows(), total=len(df)):
         smiles = row["SMILES"]
         tokens = list(map(int, str(row["TOKENS"]).split(',')))
@@ -92,7 +92,7 @@ def main():
         for i in range(n_atoms):
             tok = tokens[i]
             if atom_labels[i] == "other": continue
-            if tok not in tokens_of_interest: continue  # 只分析关心的两个token
+            if tok not in tokens_of_interest: continue  # Only analyse the target tokens
             records.append({
                 "SMILES": smiles,
                 "ATOM_IDX": i,
@@ -101,9 +101,9 @@ def main():
                 "N_ATOMS": n_atoms
             })
     allatom_df = pd.DataFrame(records)
-    print(f"收集到{len(allatom_df)}个原子，官能团与token已分组。")
+    print(f"Collected {len(allatom_df)} atoms with functional group and token annotations.")
 
-    # 2. 对每个(token, 官能团)组合采样并并行DFT
+    # 2. Sample each (token, functional group) combination and run DFT in parallel
     dft_records = []
     for fg in allatom_df["FUNC_GROUP"].unique():
         for tok in tokens_of_interest:
@@ -118,7 +118,7 @@ def main():
                         dft_records.append(res)
     dft_df = pd.DataFrame(dft_records)
     dft_df.to_csv(f"token{tokA}_vs_token{tokB}_funcgroup_dft.csv", index=False)
-    print("已保存DFT结果。")
+    print("Saved DFT results.")
 
 if __name__ == "__main__":
     main()

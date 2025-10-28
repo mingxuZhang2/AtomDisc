@@ -21,10 +21,10 @@ from atomdisc.utils.gnn_vq_utils import (
     load_gnn_vq_models,
 )
 from atomdisc.tokenization.mol_tokenizer import convert_text_smiles_to_mol_tokens
-# --- 数据集和Collator定义 ---
+# --- Dataset and collator definitions ---
 
 class MultiTaskMoleculeDataset(Dataset):
-    """一个可以加载并区分多个SFT任务的数据集。"""
+    """Dataset that loads multiple SFT tasks and keeps track of the task identity."""
     def __init__(self, records: List[Dict[str, Any]]):
         self.records = records
         logging.info(f"Initialized MultiTaskMoleculeDataset with {len(self.records)} records.")
@@ -37,7 +37,7 @@ class MultiTaskMoleculeDataset(Dataset):
 
     @staticmethod
     def load_from_multiple_files(file_path_dict: Dict[str, str]) -> "MultiTaskMoleculeDataset":
-        """从一个字典加载多个数据文件，并使用字典的键作为任务标识。"""
+        """Load multiple data files using a dictionary keyed by task identifiers."""
         all_records = []
         for task_name, file_path in file_path_dict.items():
             logging.info(f"Loading data for task '{task_name}' from {file_path}...")
@@ -57,7 +57,7 @@ class MultiTaskMoleculeDataset(Dataset):
         return MultiTaskMoleculeDataset(all_records)
 
 class MultiTaskCollator:
-    """一个可以根据任务类型，为不同化学任务构建相应Prompt的Collator。"""
+    """Collator that builds prompts according to the task type for different chemistry tasks."""
     def __init__(self, tokenizer, gnn, vq, device, max_seq_length=2048, use_structure_token=1):
         self.tokenizer = tokenizer
         self.gnn = gnn
@@ -194,7 +194,7 @@ def multitask_pretrain_lora(args):
     if tokenizer.pad_token_id is None: tokenizer.pad_token_id = tokenizer.eos_token_id
     llm_model = LlamaForCausalLM.from_pretrained(args.stage2_model_path, torch_dtype=torch.bfloat16).to(effective_device)
     logger.info("All prerequisite models loaded.")
-    # 【新功能】打印embedding size
+    # [New] Print embedding size
     logger.info(f"Loaded LLM embedding size: {llm_model.get_input_embeddings().weight.shape}")
 
     # --- LoRA Config ---
@@ -224,7 +224,7 @@ def multitask_pretrain_lora(args):
     collator = MultiTaskCollator(
         tokenizer=tokenizer, gnn=gnn, vq=vq, device=effective_device, 
         max_seq_length=args.max_seq_length,
-        use_structure_token=args.use_structure_token  # 新增
+        use_structure_token=args.use_structure_token  # [New] toggle structure tokens
     )
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, collate_fn=collator, drop_last=True)
     logger.info(f"Multi-task dataloader created with {len(dataset)} total records.")
@@ -267,11 +267,11 @@ def multitask_pretrain_lora(args):
                 scheduler.step()
                 optimizer.zero_grad()
                 optimizer_step_count += 1
-                global_step += 1 # global_step 最好在 optimizer step 之后更新
+                global_step += 1  # Prefer updating global_step after the optimizer step
                 if global_step > 0 and global_step % args.sample_output_steps == 0 and 'prompt' in batch:
                     log_sample_generation(peft_model, tokenizer, batch, effective_device, logger, args)
             
-            # 【新功能】更新进度条显示
+            # [New] Update progress bar display
             progress_bar.set_postfix({
                 "loss": f"{loss.item() * args.gradient_accumulation_steps:.4f}",
                 "lr": f"{scheduler.get_last_lr()[0]:.2e}",

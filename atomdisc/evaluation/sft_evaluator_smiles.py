@@ -1,10 +1,10 @@
 # sft_evaluator_smiles.py  (real-time sample logging)
 """
-Evaluator & logging utilities **with on-the-fly sample output**
+Evaluator & logging utilities with on-the-fly sample output
 -------------------------------------------------------------
-- 每处理一个 batch，立刻把其中每个样本的 Prompt / Reference / Prediction
-  以及 Exact-Match、RDK/MACCS/Morgan 相似度打印到 logger。
-- 评估结束后仍然保存完整 metrics + 全量样本文件。
+- After processing each batch, log every sample's Prompt / Reference / Prediction
+  along with Exact Match, RDK/MACCS/Morgan similarities.
+- At the end of evaluation, still save the full metrics and all sample outputs.
 """
 
 import os
@@ -34,7 +34,7 @@ def evaluate_reaction_prediction(
     sft_save_dir: str,
     script_args,
 ):
-    """在反应预测 / 逆合成任务上评估模型并记录指标。"""
+    """Evaluate reaction prediction / retrosynthesis tasks and record metrics."""
     from compute_metrics_smiles import (
         compute_exact_match,
         compute_bleu_on_smiles,
@@ -72,7 +72,7 @@ def evaluate_reaction_prediction(
         all_references.extend([r.strip() for r in references])
         all_prompts.extend(prompts)
 
-        # 实时记录每个样本及指标
+        # Log each sample and metrics in real time
         for i, (p_text, r_text, prompt_text) in enumerate(zip(batch_predictions, references, prompts)):
             em = int(p_text.strip() == r_text.strip())
             bleu_one = compute_bleu_on_smiles([p_text.strip()], [r_text.strip()])
@@ -87,7 +87,7 @@ def evaluate_reaction_prediction(
             )
 
     if not all_predictions:
-        main_script_logger.warning("空预测，跳过指标计算。")
+        main_script_logger.warning("Empty predictions; skip metric computation.")
         return {
             "Exact Match ↑": 0,
             "BLEU ↑": 0,
@@ -144,7 +144,7 @@ def evaluate_retrosynthesis_prediction(
     sft_save_dir: str,
     script_args,
 ):
-    """在反应预测 / 逆合成任务上评估模型并记录指标。"""
+    """Evaluate reaction prediction / retrosynthesis tasks and record metrics."""
     from compute_metrics_smiles import (
         compute_exact_match,
         compute_bleu_on_smiles,
@@ -175,7 +175,7 @@ def evaluate_retrosynthesis_prediction(
                 eos_token_id=eval_tokenizer.eos_token_id,
             )
             def join_smiles_lines(s):
-                """把多行 SMILES 变成一行（用 . 连接）"""
+                """Collapse multi-line SMILES into a single line (join with '.')."""
                 return ".".join([i.strip() for i in s.strip().splitlines() if i.strip()])
 
             prompt_len = inputs['input_ids'].shape[1]
@@ -186,7 +186,7 @@ def evaluate_retrosynthesis_prediction(
         all_references.extend([r.strip() for r in references])
         all_prompts.extend(prompts)
 
-        # 实时记录每个样本及指标
+        # Log each sample and metrics in real time
         for i, (p_text, r_text, prompt_text) in enumerate(zip(batch_predictions, references, prompts)):
             em = int(p_text.strip() == r_text.strip())
             bleu_one = compute_bleu_on_smiles([p_text.strip()], [r_text.strip()])
@@ -201,7 +201,7 @@ def evaluate_retrosynthesis_prediction(
             )
 
     if not all_predictions:
-        main_script_logger.warning("空预测，跳过指标计算。")
+        main_script_logger.warning("Empty predictions; skip metric computation.")
         return {
             "Exact Match ↑": 0,
             "BLEU ↑": 0,

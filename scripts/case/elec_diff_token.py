@@ -5,7 +5,7 @@ from pyscf import gto, scf
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# ----------------------参数区----------------------
+# ---------------------- Parameter Section ----------------------
 FUNC_SMARTS_LIST = [
     ("carboxy_C=O", "[CX3](=O)[OX1H0-,OX2H1]", 1),
     ("carboxy_OH",  "[CX3](=O)[OX1H0-,OX2H1]", 2),
@@ -25,16 +25,16 @@ TOKEN_PAIRS = [
     (209, 34),
     (7, 318),
     (146, 39)
-    # 可以无限多对
+    # Allow unlimited pairs
 ]
 
-FUNC_GROUP = "ether_O"     # 当前只对比这个官能团
-SAMPLES_PER_TOKEN = 100      # 每个 Token 采样数量
+FUNC_GROUP = "ether_O"     # Focus on this functional group for comparison
+SAMPLES_PER_TOKEN = 100      # Sample size per token
 MAX_ATOMS = 50
 NUM_WORKERS = 8
 BASIS, XC = "sto-3g", "hf"   # HF/STO-3G
-DATA_PATH = "/home-ssd/Users/nsgm_zmx/Molecule/src_classification/Llama/property_analyze/data/CID2SMILES_special_tokens.csv"  # 你的数据路径
-# ----------------------参数区----------------------
+DATA_PATH = "/home-ssd/Users/nsgm_zmx/Molecule/src_classification/Llama/property_analyze/data/CID2SMILES_special_tokens.csv"  # Replace with your data path
+# ---------------------- Parameter Section ----------------------
 
 def sample_df(df, group, token, n=SAMPLES_PER_TOKEN):
     sub = df[(df["FUNC_GROUP"] == group) & (df["TOKEN_ID"] == token)]
@@ -64,7 +64,7 @@ def calc_pi_electron_on_atom(mol, atom_idx, basis=BASIS, xc=XC):
     try:
         mol_p.build(atom=atom_list, basis=basis, verbose=0)
     except RuntimeError as e:
-        print(f"[跳过] 构建分子失败: {e}")
+        print(f"[Skip] Molecule construction failed: {e}")
         return None
     if xc.lower() == "hf":
         mf = scf.RHF(mol_p).run()
@@ -115,7 +115,7 @@ def main():
     df = pd.read_csv(DATA_PATH)
     compiled = [(lab, Chem.MolFromSmarts(sma), idx) for lab, sma, idx in FUNC_SMARTS_LIST]
     records = []
-    for _, row in tqdm(df.iterrows(), total=len(df), desc="打标签"):
+    for _, row in tqdm(df.iterrows(), total=len(df), desc="Labeling"):
         mol = Chem.MolFromSmiles(row.SMILES)
         if mol is None: continue
         toks = list(map(int, str(row.TOKENS).split(',')))
@@ -139,12 +139,12 @@ def main():
     all_atoms = pd.DataFrame(records)
     all_atoms = all_atoms[all_atoms.N_ATOMS <= MAX_ATOMS]
     df_fg = all_atoms[all_atoms.FUNC_GROUP == FUNC_GROUP]
-    print(f"{FUNC_GROUP} 匹配到的总原子数: {len(df_fg)}")
+    print(f"Total atoms matched for {FUNC_GROUP}: {len(df_fg)}")
 
     for tokA, tokB in TOKEN_PAIRS:
         dfA = sample_df(df_fg, FUNC_GROUP, tokA, n=SAMPLES_PER_TOKEN)
         dfB = sample_df(df_fg, FUNC_GROUP, tokB, n=SAMPLES_PER_TOKEN)
-        print(f"\n→ 处理 Pair ({tokA}, {tokB})，TokenA样本: {len(dfA)}，TokenB样本: {len(dfB)}")
+        print(f"\n→ Processing pair ({tokA}, {tokB}); TokenA samples: {len(dfA)}, TokenB samples: {len(dfB)}")
         resultsA = process_token(dfA, tokA)
         resultsB = process_token(dfB, tokB)
         outA = pd.DataFrame(resultsA)
@@ -153,7 +153,7 @@ def main():
         outB["PAIR"] = f"{tokA}_vs_{tokB}"
         out = pd.concat([outA, outB], ignore_index=True)
         out.to_csv(f"{FUNC_GROUP}_token{tokA}_vs_token{tokB}_pi_electron.csv", index=False)
-        print(f"已保存：{FUNC_GROUP}_token{tokA}_vs_token{tokB}_pi_electron.csv")
+        print(f"Saved: {FUNC_GROUP}_token{tokA}_vs_token{tokB}_pi_electron.csv")
 
 if __name__ == "__main__":
     main()

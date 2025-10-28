@@ -1,11 +1,6 @@
 # stage4_sft_lora_prop.py
 """
-Stage-4 SFT for molecular property-prediction (HIV / …)
--------------------------------------------------------
-• 训练集：先取原始数据 → 10 % 划作验证集(不做任何均衡)  
-            → 剩余样本随机采样最多 1 万条 → 对该 1 万条做 minority-oversampling  
-• 评估指标：Acc / P / R / F1，且打印验证集中第一条样本 Prompt / Gen / Ref  
-• 其余保持与上一版一致
+Stage-4\tSFT for molecular property prediction
 """
 from __future__ import annotations
 import os
@@ -84,7 +79,7 @@ def evaluate(epoch, model, tok, loader, dev, logger, args):
         return
     model.eval()
 
-    # 三个任务桶
+    # Three task buckets
     buckets = {
         "homo": {"pred": [], "ref": []},
         "lumo": {"pred": [], "ref": []},
@@ -100,7 +95,7 @@ def evaluate(epoch, model, tok, loader, dev, logger, args):
             refs_batch = [float(x) for x in batch["target_text"]]
             tasks_batch = batch["task"]
 
-            # 编码 prompt → 生成
+            # Encode prompts and run generation
             inp = tok(
                 prompts,
                 return_tensors="pt",
@@ -116,19 +111,19 @@ def evaluate(epoch, model, tok, loader, dev, logger, args):
                 do_sample=args.do_sample_eval,
             )
 
-            # 解码
+            # Decode outputs
             gen_texts = [
                 tok.decode(g[len(i):], skip_special_tokens=True).strip()
                 for g, i in zip(gen_ids, inp["input_ids"])
             ]
 
-            # 正则提取 float
+            # Extract floats via regex
             pred_batch = []
             for txt in gen_texts:
                 m = re.search(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", txt)
                 pred_batch.append(float(m.group()) if m else np.nan)
 
-            # 收集全部样例
+            # Collect all samples
             for prm, ref, gen, val, task in zip(prompts, refs_batch, gen_texts, pred_batch, tasks_batch):
                 task = task.lower()
                 if task in buckets:
@@ -143,7 +138,7 @@ def evaluate(epoch, model, tok, loader, dev, logger, args):
                     "task": task,
                 })
 
-            # 打印首条样例
+            # Print the first sample
             if not first_printed and len(gen_texts):
                 logger.info("\n===== Eval sample =====\n"
                             f"Prompt:\n{prompts[0]}\n"
@@ -154,7 +149,7 @@ def evaluate(epoch, model, tok, loader, dev, logger, args):
                             "=======================\n")
                 first_printed = True
 
-    # === 每个任务分别计算 RMSE / MAE ===
+    # === Compute RMSE / MAE for each task ===
     for task, buf in buckets.items():
         preds = np.array(buf["pred"], dtype=np.float64)
         refs = np.array(buf["ref"], dtype=np.float64)
@@ -172,7 +167,7 @@ def evaluate(epoch, model, tok, loader, dev, logger, args):
 
     model.train()
 
-    # === 保存 JSONL 文件 ===
+    # === Save JSONL file ===
     out_dir = Path(args.output_dir) / "eval_outputs"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"epoch_{epoch}.jsonl"
@@ -221,7 +216,7 @@ def sft_lora(args):
             all_recs += json.loads(fp.read_text())
     random.shuffle(all_recs)
 
-    # === 使用 metadata["split"] 来划分 train / val ===
+    # === Use metadata["split"] for train/val partitions ===
     train_recs = [r for r in all_recs if (r.get("metadata") or {}).get("split") == "train"]
     val_recs   = [r for r in all_recs if (r.get("metadata") or {}).get("split") == "test"]
 
